@@ -8,7 +8,7 @@ export default defineConfig({
   root: dirname(fileURLToPath(import.meta.url)),
   plugins: [react(), commonjs()],
   envPrefix: 'F2',
-  base: '/fallout2ce',
+  base: '/fallout2-ce-ems',
   clearScreen: false,
   build: {
     outDir: './dist/',

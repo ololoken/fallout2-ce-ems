@@ -1,0 +1,48 @@
+name: build and deploy fh2-launcher
+on: 
+  push:
+    branches:
+      - main
+jobs:
+
+  build-fallout2-ce-emscripten-module:
+    runs-on: ubuntu-latest
+    container: emscripten/emsdk:3.1.74
+    steps:
+      - name: Checkout fallout2☢️
+        uses: actions/checkout@v4
+        with:
+          repository: ololoken/fallout2-ce
+          ref: refs/heads/main
+      - name: Build fallout2☢️ wasm module 🔧
+        run: |
+          git config --global --add safe.directory "*"
+          mkdir -p fallout2-ce-emscripten-module
+          mkdir -p build && cd build && emcmake cmake ../ -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain/Emscripten.cmake && emmake make && cd ..
+          cp fallout2-ce.js fheroes2-emscripten-module
+          cp fallout2-ce.wasm fheroes2-emscripten-module
+      - name: Store fallout2-ce wasm artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fallout2-ce-emscripten-module
+          path: fallout2-ce-emscripten-module
+
+  build-fh2-ems-launcher:
+    runs-on: ubuntu-latest
+    needs: build-fallout2-ce-emscripten-module
+    steps:
+      - name: Checkout launcher 🛎️
+        uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: fallout2-ce-emscripten-module
+          path: src/assets/fallout2ce/
+      - name: Install and Build 🔧
+        run: |
+          npm install
+          npm run build
+      - name: Deploy 🚀
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          branch: gh-pages-demo
+          folder: dist
