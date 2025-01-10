@@ -96,30 +96,30 @@ export default () => {
   useEffect(() => {
     if (!instance) return;
 
-    instance.print(`Looking up data in [${instance.ENV.HOME}]`)
-    try {
-      instance.print(`Mounting [${instance.ENV.HOME}]`)
+    instance.print(`Looking up data in [${instance.ENV.HOME}]`);
+    (async () => {
+      try {
+        instance.print(`Mounting [${instance.ENV.HOME}]`)
 
-      instance.FS.mkdir(`${instance.ENV.HOME}`);
-      instance.FS.mount(instance.FS.filesystems.IDBFS, { root: '/' }, `${instance.ENV.HOME}`);
-      instance.FS.syncfs(true, err => {
-        if (err) throw err;
-        instance.print(`Mounted [${instance.ENV.HOME}]`);
+        instance.FS.mkdir(`${instance.ENV.HOME}`);
+        instance.FS.mount(instance.FS.filesystems.IDBFS, {root: '/'}, `${instance.ENV.HOME}`);
+        await new Promise<void>((resolve, reject) => instance.FS.syncfs(true, err => {
+          if (err) return reject(err);
+          instance.print(`Mounted [${instance.ENV.HOME}]`);
 
-        const dataFound = Object.keys(instance.FS.lookupPath(`${instance.ENV.HOME}`).node.contents).length > 1;
-        setHasData(dataFound);
-        if (!dataFound) throw('No data');
-        instance.print('Data found.');
-      });
-    }
-    catch (ignore) {
-      instance.print('No local data found...')
-    }
-    finally {
-      setInitialized(true);
-      instance.FS.writeFile(`${instance?.ENV.HOME}/f2_res.ini`, f2_resIni, { encoding: 'utf8' })
-      instance.FS.chdir(`${instance?.ENV.HOME}`)
-    }
+          const dataFound = Object.keys(instance.FS.lookupPath(`${instance.ENV.HOME}`).node.contents).length > 1;
+          setHasData(dataFound);
+          if (!dataFound) return reject('No game data found.');
+          resolve()
+        }));
+      } catch (ignore) {
+        instance.print('No local data found...')
+      } finally {
+        setInitialized(true);
+        instance.FS.writeFile(`${instance?.ENV.HOME}/f2_res.ini`, f2_resIni, {encoding: 'utf8'})
+        instance.FS.chdir(`${instance?.ENV.HOME}`)
+      }
+    })()
   }, [instance])
 
   useEffect(() => {//handle folder input
