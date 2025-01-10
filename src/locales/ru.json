@@ -1,0 +1,24 @@
+{
+  "translation": {
+    "menu": {
+      "Toggle Console": "Переключить отображение консоли",
+      "Select data folder": "Указать папку с ресурсами игры",
+      "Remove data": "Удалить ресурсы",
+      "Run": "Запустить",
+      "Select zip archive": "Архив zip",
+      "Toggle Fullscreen": "На весь экран",
+      "Add game data": "Загрузка ресурсов игры",
+      "Try demo": "Демо-версия"
+    },
+    "error": {
+      "Internal Server Error": "Очень серьезная ошибка",
+      "Server error 500. we fixing the problem. please try again at a later stage.": "Server error 500. we fixing the problem. please try again at a later stage.",
+      "Back To Home": "На главную",
+      "The page you are looking was moved, removed, renamed, or might never exist!": "The page you are looking was moved, removed, renamed, or might never exist!",
+      "Page Not Found": "Страница не найден"
+    },
+    "confirm": {
+      "Are you sure?": "Удалить данные?"
+    }
+  }
+}
