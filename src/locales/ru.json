@@ -8,7 +8,8 @@
       "Select zip archive": "Архив zip",
       "Toggle Fullscreen": "На весь экран",
       "Add game data": "Загрузка ресурсов игры",
-      "Try demo": "Демо-версия"
+      "Try demo": "Демо-версия",
+      "Fetch saves": "Скачать сейвы"
     },
     "error": {
       "Internal Server Error": "Очень серьезная ошибка",

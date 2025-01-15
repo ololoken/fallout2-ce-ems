@@ -17,26 +17,29 @@ import BackgroundImage from '../assets/images/background.jpg'
 
 import { useEffect, useRef, useState } from 'react';
 import { useTheme } from '@mui/material/styles';
-import { useTranslation} from 'react-i18next';
-import { Module } from '../types/Module';
+import { useTranslation } from 'react-i18next';
+import { FSNode, Module } from '../types/Module';
 
+import ActionConfirmation from '../components/ActionConfirmation';
 import DeleteIcon from '../components/icons/DeleteIcon';
+import DownloadIcon from '../components/icons/DownloadIcon';
 import FolderIcon from '../components/icons/FolderIcon';
 import FullScreenIcon from '../components/icons/FullScreenIcon';
 import GlobeIcon from '../components/icons/GlobeIcon';
 import LaunchIcon from '../components/icons/LaunchIcon';
 import TerminalIcon from '../components/icons/TerminalIcon';
-
 import UploadIcon from '../components/icons/UploadIcon';
 import ZipIcon from '../components/icons/ZipIcon';
-import ActionConfirmation from '../components/ActionConfirmation';
+
+import { ZipWriter, Uint8ArrayWriter, Uint8ArrayReader } from '@zip.js/zip.js';
+
 import { ModuleInstance } from './module'
 import { directoryInputHandler, zipInputHandler } from './dataInput';
 import useConfig from '../hooks/useConfig';
 import f2_resIni from '../assets/fallout2ce/f2_res.ini';
 
 export default () => {
-  const { t } = useTranslation();
+  const { t, i18n: { resolvedLanguage } } = useTranslation();
   const config = useConfig();
   const theme = useTheme();
   const [downloadProgress, reportDownloadProgress] = useState(0);
@@ -163,6 +166,27 @@ export default () => {
     setShowConsole(false);
   }
 
+  const fetchSaves = async () => {
+    if (!instance) return;
+    setInitialized(false)
+    const reducer: ({path, node}: {path: string, node: FSNode}) => ({[path: string]: Int8Array}) = ({ path, node }) =>
+      Object.entries(node.contents).reduce((acc, [name, node]) => ({
+        ...acc,
+        ...(ArrayBuffer.isView(node.contents)
+          ? { [`${path}/${name}`]: node.contents }
+          : reducer({ path: `${path}/${name}`, node }))
+      }), {} as ReturnType<typeof reducer>);
+    const zip = new ZipWriter(new Uint8ArrayWriter(), { bufferedWrite: true });
+    for(let [path, content] of Object.entries(reducer(instance.FS.lookupPath(`data/SAVEGAME`)))) {
+      await zip.add(path, new Uint8ArrayReader(new Uint8Array(content.buffer)))
+    }
+    Object.assign(document.createElement('a'), {
+      href: URL.createObjectURL(new Blob([await zip.close()], { type: 'application/zip' })),
+      download: 'f2-ce-saves.zip'
+    }).dispatchEvent(new MouseEvent('click'));
+    setInitialized(true)
+  }
+
   useEffect(function critical () {
     const handler = (e: Event) => {
       setFullscreen(!!document.fullscreenElement);
@@ -235,6 +259,11 @@ export default () => {
                 variant="contained"
                 onClick={() => runInstance()}
             ><LaunchIcon width="2.4em" height="2.4em" style={{ margin: '0 1em 0 0' }} /> {t('menu.Run')}</Button>}
+            {initialized && hasData && !mainRunning && <Button
+                sx={{ fontSize: '1em', height: '36px' }}
+                variant="contained"
+                onClick={() => fetchSaves()}
+            ><DownloadIcon width="2.4em" height="2.4em" style={{ margin: '0 1em 0 0' }} /> {t('menu.Fetch saves')}</Button>}
             {initialized && hasData && !mainRunning && <Button
               sx={{ fontSize: '1em', height: '36px' }}
               variant="contained"
