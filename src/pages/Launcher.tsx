@@ -338,6 +338,7 @@ export default () => {
           if (!status || !instance) return;
 
           clearPath(String(instance.ENV.HOME));
+          instance.FS.writeFile(`${instance?.ENV.HOME}/f2_res.ini`, f2_resIni, {encoding: 'utf8'})
           instance.FS.syncfs(false, err => {
             if (err) return instance.print(`Failed to remove data at [${instance.ENV.HOME}]`);
             setHasData(false)

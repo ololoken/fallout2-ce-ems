@@ -2,17 +2,12 @@ import throwExpression from '../common/throwExpression';
 import { Module } from '../types/Module';
 import { BlobReader, Uint8ArrayWriter, ZipReader } from '@zip.js/zip.js';
 
-const whitListedFolders = ['data', 'fallout_sonora'];
 const requiredFiles = ['master.dat', 'critter.dat']
 
 const filterInput = (relativePath: string) => {
   if (relativePath.endsWith('/')) return false;
-  const [fileName, ...path] = relativePath.split('/').reverse();
-  if (fileName.startsWith('.')) return false;
-  console.log(path)
-  return path
-    .map(folder => folder.toLocaleLowerCase())
-    .some(folder => whitListedFolders.includes(folder))
+  const [fileName] = relativePath.split('/').reverse();
+  return !(fileName.length === 0 || fileName.startsWith('.'));
 }
 
 const mkdirWithParents = (instance: Module) => (path: string) => {
