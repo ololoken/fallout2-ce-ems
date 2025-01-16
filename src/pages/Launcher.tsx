@@ -22,6 +22,7 @@ import { FSNode, Module } from '../types/Module';
 
 import ActionConfirmation from '../components/ActionConfirmation';
 import DeleteIcon from '../components/icons/DeleteIcon';
+import DemoIcon from '../components/icons/DemoIcon';
 import DownloadIcon from '../components/icons/DownloadIcon';
 import FolderIcon from '../components/icons/FolderIcon';
 import FullScreenIcon from '../components/icons/FullScreenIcon';
@@ -34,7 +35,7 @@ import ZipIcon from '../components/icons/ZipIcon';
 import { ZipWriter, Uint8ArrayWriter, Uint8ArrayReader } from '@zip.js/zip.js';
 
 import { ModuleInstance } from './module'
-import { directoryInputHandler, zipInputHandler } from './dataInput';
+import {directoryInputHandler, zipHttpReader, zipInputHandler, zipInputReader} from './dataInput';
 import useConfig from '../hooks/useConfig';
 import f2_resIni from '../assets/fallout2ce/f2_res.ini';
 
@@ -187,6 +188,13 @@ export default () => {
     setInitialized(true)
   }
 
+  const importSonora = async () => {
+    if (!instance) return;
+    instance.print(`Отличный выбор.... Начинаю установку.`);
+
+    zipHttpReader(instance, setHasData, 'https://turch.in/Fallout_Sonora_1_14.zip');
+  }
+
   useEffect(function critical () {
     const handler = (e: Event) => {
       setFullscreen(!!document.fullscreenElement);
@@ -232,8 +240,8 @@ export default () => {
               </ToggleButton>
             </Tooltip>
             <Menu open={Boolean(langAnchorEl)} anchorEl={langAnchorEl} onClose={() => setLangAnchorEl(undefined)}>
-              <MenuItem onClick={() => { config.onChangeLocalization('ru-RU'); setLangAnchorEl(undefined) }} disabled={!zipInput.current} sx={{fontSize: '10px', textDecoration: config.i18n === 'ru-RU' ? 'underline' : '' }}>RU</MenuItem>
-              <MenuItem onClick={() => { config.onChangeLocalization('en-US'); setLangAnchorEl(undefined) }} disabled={!directoryInput.current} sx={{fontSize: '10px', textDecoration: config.i18n === 'en-US' ? 'underline' : ''}}>EN</MenuItem>
+              <MenuItem onClick={() => { config.onChangeLocalization('ru-RU'); setLangAnchorEl(undefined) }} disabled={!zipInput.current} sx={{fontSize: '10px', textDecoration: resolvedLanguage === 'ru-RU' ? 'underline' : '' }}>RU</MenuItem>
+              <MenuItem onClick={() => { config.onChangeLocalization('en-US'); setLangAnchorEl(undefined) }} disabled={!directoryInput.current} sx={{fontSize: '10px', textDecoration: resolvedLanguage === 'en-US' ? 'underline' : ''}}>EN</MenuItem>
             </Menu>
             <Box flex={1} />
             {!initialized && <CircularProgress color="warning" size="34px" />}
@@ -253,6 +261,10 @@ export default () => {
                 <ListItemIcon><FolderIcon width="2.4em" height="2.4em" style={{ margin: '0 1em 0 0' }} /></ListItemIcon>
                 <ListItemText>{t('menu.Select data folder')}</ListItemText>
               </MenuItem>
+              {resolvedLanguage === 'ru-RU' && <MenuItem onClick={() => { importSonora(); setUploadAnchorEl(undefined) }} sx={{fontSize: '10px'}}>
+                <ListItemIcon><DemoIcon width="2.4em" height="2.4em" style={{ margin: '0 1em 0 0' }} /></ListItemIcon>
+                <ListItemText>Fallout 2: Сонора</ListItemText>
+              </MenuItem>}
             </Menu>
             {initialized && hasData && !mainRunning && <Button
                 sx={{ fontSize: '1em', height: '36px' }}
