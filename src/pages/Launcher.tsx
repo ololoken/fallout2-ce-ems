@@ -18,7 +18,7 @@ import BackgroundImage from '../assets/images/background.jpg'
 import { useEffect, useRef, useState } from 'react';
 import { useTheme } from '@mui/material/styles';
 import { useTranslation } from 'react-i18next';
-import { FSNode, Module } from '../types/Module';
+import { Module } from '../types/Module';
 
 import ActionConfirmation from '../components/ActionConfirmation';
 import DeleteIcon from '../components/icons/DeleteIcon';
@@ -32,12 +32,12 @@ import TerminalIcon from '../components/icons/TerminalIcon';
 import UploadIcon from '../components/icons/UploadIcon';
 import ZipIcon from '../components/icons/ZipIcon';
 
-import { ZipWriter, Uint8ArrayWriter, Uint8ArrayReader } from '@zip.js/zip.js';
-
 import { ModuleInstance } from './module'
-import {directoryInputHandler, zipHttpReader, zipInputHandler, zipInputReader} from './dataInput';
+import {directoryInputHandler, zipHttpReader, zipInputReader} from './dataInput';
 import useConfig from '../hooks/useConfig';
 import f2_resIni from '../assets/fallout2ce/f2_res.ini';
+import fetchSaves from './fetchSaves';
+import throwExpression from "../common/throwExpression.ts";
 
 export default () => {
   const { t, i18n: { resolvedLanguage } } = useTranslation();
@@ -107,17 +107,16 @@ export default () => {
 
         instance.FS.mkdir(`${instance.ENV.HOME}`);
         instance.FS.mount(instance.FS.filesystems.IDBFS, {root: '/'}, `${instance.ENV.HOME}`);
-        setHasData(await new Promise<boolean>((resolve, reject) => instance.FS.syncfs(true, err => {
+        await new Promise<boolean>((resolve, reject) => instance.FS.syncfs(true, err => {
           if (err) return reject(err);
           instance.print(`Mounted [${instance.ENV.HOME}]`);
-
           resolve(Object.keys(instance.FS.lookupPath(`${instance.ENV.HOME}`).node.contents).length > 1);
-        })))
+        })).then(setHasData)
       } catch (ignore) {
         instance.print('No local data found...')
       } finally {
         setInitialized(true);
-        instance.FS.writeFile(`${instance?.ENV.HOME}/f2_res.ini`, f2_resIni, {encoding: 'utf8'})
+        instance.FS.writeFile(`${instance?.ENV.HOME}/f2_res.ini`, f2_resIni, { encoding: 'utf8' });
         instance.FS.chdir(`${instance?.ENV.HOME}`)
       }
     })()
@@ -137,11 +136,25 @@ export default () => {
     const { current } = zipInput;
     if (!current || !instance) return;
 
-    const handler = zipInputHandler(instance, setHasData);
+    const handler = ({ target }: Event) => {
+      const input = target as HTMLInputElement;
+      const file = input.files?.[0] ?? throwExpression('no file provided');
+      input.value = '';
+      zipInputReader(instance, file).then(setHasData);
+    }
     current.addEventListener('input', handler);
 
     return () => current.removeEventListener('input', handler);
   }, [zipInput, instance]);
+
+  useEffect(() => {
+    if (!hasData || !instance) return;
+    instance.print(`Data bundle looks ok. Continue initialization...`)
+    instance.FS.syncfs(false, err => {
+      if (err) return instance.print('Failed to sync FS');
+      return true;
+    })
+  }, [hasData, instance]);
 
   const clearPath = (basePath: string) => {
     if (!instance) return;
@@ -152,8 +165,11 @@ export default () => {
             ? clearPath(`${basePath}/${path}`)
             : instance.FS.unlink(`${basePath}/${path}`)
       })
-      instance.FS.rmdir(`${basePath}`)
-    } catch (err) { instance.print(`Failed to remove stored data ${err}`) }
+      try { instance.FS.rmdir(`${basePath}`) } catch (ignore) {}
+    } catch (e) {
+      console.error(e);
+      instance.print(`Failed to remove stored data ${e}`)
+    }
   };
 
   const removeData = () => {
@@ -167,32 +183,18 @@ export default () => {
     setShowConsole(false);
   }
 
-  const fetchSaves = async () => {
-    if (!instance) return;
-    setInitialized(false)
-    const reducer: ({path, node}: {path: string, node: FSNode}) => ({[path: string]: Int8Array}) = ({ path, node }) =>
-      Object.entries(node.contents).reduce((acc, [name, node]) => ({
-        ...acc,
-        ...(ArrayBuffer.isView(node.contents)
-          ? { [`${path}/${name}`]: node.contents }
-          : reducer({ path: `${path}/${name}`, node }))
-      }), {} as ReturnType<typeof reducer>);
-    const zip = new ZipWriter(new Uint8ArrayWriter(), { bufferedWrite: true });
-    for(let [path, content] of Object.entries(reducer(instance.FS.lookupPath(`data/SAVEGAME`)))) {
-      await zip.add(path, new Uint8ArrayReader(new Uint8Array(content.buffer)))
-    }
-    Object.assign(document.createElement('a'), {
-      href: URL.createObjectURL(new Blob([await zip.close()], { type: 'application/zip' })),
-      download: 'f2-ce-saves.zip'
-    }).dispatchEvent(new MouseEvent('click'));
-    setInitialized(true)
-  }
-
   const importSonora = async () => {
     if (!instance) return;
     instance.print(`Отличный выбор.... Начинаю установку.`);
+    const url = 'https://turch.in/Fallout_Sonora_1_14.zip';
+    zipHttpReader(instance, url).then(setHasData);
+  }
 
-    zipHttpReader(instance, setHasData, 'https://turch.in/Fallout_Sonora_1_14.zip');
+  const importNevada = () => {
+    if (!instance) return;
+    const url = 'https://turch.in/Fallout_Nevada.zip';
+    instance.print(`Отличный выбор.... Начинаю установку.`);
+    zipHttpReader(instance, url, 20).then(setHasData);
   }
 
   useEffect(function critical () {
@@ -265,6 +267,10 @@ export default () => {
                 <ListItemIcon><DemoIcon width="2.4em" height="2.4em" style={{ margin: '0 1em 0 0' }} /></ListItemIcon>
                 <ListItemText>Fallout 2: Сонора</ListItemText>
               </MenuItem>}
+              {resolvedLanguage === 'ru-RU' && <MenuItem onClick={() => { importNevada(); setUploadAnchorEl(undefined) }} sx={{fontSize: '10px'}}>
+                  <ListItemIcon><DemoIcon width="2.4em" height="2.4em" style={{ margin: '0 1em 0 0' }} /></ListItemIcon>
+                  <ListItemText>Fallout 2: Невада</ListItemText>
+              </MenuItem>}
             </Menu>
             {initialized && hasData && !mainRunning && <Button
                 sx={{ fontSize: '1em', height: '36px' }}
@@ -274,7 +280,10 @@ export default () => {
             {initialized && hasData && !mainRunning && <Button
                 sx={{ fontSize: '1em', height: '36px' }}
                 variant="contained"
-                onClick={() => fetchSaves()}
+                onClick={() => {
+                  setInitialized(true)
+                  fetchSaves(instance).finally(() => setInitialized(false));
+                }}
             ><DownloadIcon width="2.4em" height="2.4em" style={{ margin: '0 1em 0 0' }} /> {t('menu.Fetch saves')}</Button>}
             {initialized && hasData && !mainRunning && <Button
               sx={{ fontSize: '1em', height: '36px' }}
@@ -348,13 +357,14 @@ export default () => {
         handleClose={(status) => {
           setOpenDeleteConfirmation(false);
           if (!status || !instance) return;
-
+          setInitialized(false);
+          setShowConsole(true)
           clearPath(String(instance.ENV.HOME));
           instance.FS.writeFile(`${instance?.ENV.HOME}/f2_res.ini`, f2_resIni, {encoding: 'utf8'})
           instance.FS.syncfs(false, err => {
             if (err) return instance.print(`Failed to remove data at [${instance.ENV.HOME}]`);
             setHasData(false)
-            setShowConsole(true)
+            setInitialized(true);
           });
 
         }}
