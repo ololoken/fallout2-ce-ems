@@ -24,39 +24,29 @@ const mkdirWithParents = (instance: Module) => (path: string) => {
   }
 }
 
-export const directoryInputHandler = (instance: Module, setHasData: (hasData: boolean) => void) => ({ target }: Event) => {
-
-  const input = target as HTMLInputElement;
-  if (!input.files) return instance.print('No files selected');
-
-  const files = [...input.files];
-  input.value = '';
-
-  if (files.length === 1) return instance.print('zip archives are not supported yet, sorry');
-
+export const directoryInputHandler = async (instance: Module, files: File[]) => {
   const filtered = files.filter(({ webkitRelativePath }) => filterInput(webkitRelativePath));
 
-  filtered.reduce((uploaded, file) => {
-    const [uri, relativePath] = getUri(`${instance.ENV.HOME}`, file.webkitRelativePath, false);
+  const uploaded = await Promise.all(filtered.map(file => {
+    const [uri, relativePath] = getUri(`${instance.ENV.HOME}`, file.webkitRelativePath, true);
 
     mkdirWithParents(instance)(`${instance.ENV.HOME}/${relativePath}`);
 
-    const reader = new FileReader();
-    reader.addEventListener('error', console.error);
-    reader.addEventListener('loadend', ({ target }) => {
-      instance.print(`Writing file ${uri} to virtual fs from ${file.webkitRelativePath}`);
-      instance.FS.writeFile(`${uri}`, new Uint8Array(target?.result as ArrayBuffer ?? throwExpression('')), {
-        encoding: 'binary'
+    return new Promise<boolean>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.addEventListener('error', reject);
+      reader.addEventListener('loadend', ({ target }) => {
+        instance.print(`Writing file ${uri} to virtual fs from ${file.webkitRelativePath}`);
+        instance.FS.writeFile(uri, new Uint8Array(target?.result as ArrayBuffer ?? throwExpression('')), { encoding: 'binary' });
+        resolve(true)
       });
-      uploaded.push(uri);
-      if (uploaded.length === filtered.length) {
-        instance.print(`Data bundle looks ok. Ready to run...`)
-        setHasData(true);
-      }
-    });
-    reader.readAsArrayBuffer(file);
-    return uploaded;
-  }, new Array<string>);
+      reader.readAsArrayBuffer(file);
+    }).catch(e => {
+      console.error(e);
+      return false;
+    })
+  }));
+  return !uploaded.some(r => !r) && uploaded.length === filtered.length;
 }
 
 const getUri = (basePath: string, entryName: string, hasRoot: boolean) => {

@@ -126,7 +126,12 @@ export default () => {
     const { current } = directoryInput;
     if (!current || !instance) return;
 
-    const handler = directoryInputHandler(instance, setHasData);
+    const handler = ({ target }: Event) => {
+      const input = target as HTMLInputElement;
+      if (!input.files) return instance.print('No files selected');
+      directoryInputHandler(instance, [...input.files]).then(setHasData);
+      input.value = '';
+    }
     current.addEventListener('input', handler);
 
     return () => current.removeEventListener('input', handler);
@@ -189,6 +194,14 @@ export default () => {
     const url = 'https://turch.in/Fallout_Sonora_1_14.zip';
     zipHttpReader(instance, url).then(setHasData);
   }
+
+  const importSonoraEn = async () => {
+    if (!instance) return;
+    instance.print(`Good luck you ranger....`);
+    const url = 'https://turch.in/Fallout_Sonora_1_14_en.zip';
+    zipHttpReader(instance, url).then(setHasData);
+  }
+
 
   const importNevada = () => {
     if (!instance) return;
@@ -270,6 +283,10 @@ export default () => {
               {resolvedLanguage === 'ru-RU' && <MenuItem onClick={() => { importNevada(); setUploadAnchorEl(undefined) }} sx={{fontSize: '10px'}}>
                   <ListItemIcon><DemoIcon width="2.4em" height="2.4em" style={{ margin: '0 1em 0 0' }} /></ListItemIcon>
                   <ListItemText>Fallout 2: Невада</ListItemText>
+              </MenuItem>}
+              {resolvedLanguage === 'en-US' && <MenuItem onClick={() => { importSonoraEn(); setUploadAnchorEl(undefined) }} sx={{fontSize: '10px'}}>
+                  <ListItemIcon><DemoIcon width="2.4em" height="2.4em" style={{ margin: '0 1em 0 0' }} /></ListItemIcon>
+                  <ListItemText>Fallout 2: Sonora</ListItemText>
               </MenuItem>}
             </Menu>
             {initialized && hasData && !mainRunning && <Button
