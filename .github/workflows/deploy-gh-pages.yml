@@ -20,7 +20,7 @@ jobs:
           mkdir -p fallout2-ce-emscripten-module
           mkdir -p build
           cd build
-          emcmake cmake ../ -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain/Emscripten.cmake && emmake make
+          emcmake cmake ../ -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain/Emscripten.cmake -DCMAKE_BUILD_TYPE=Release && emmake make
           cd ..
           cp build/fallout2-ce.js fallout2-ce-emscripten-module/
           cp build/fallout2-ce.wasm fallout2-ce-emscripten-module/
