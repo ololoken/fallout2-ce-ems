@@ -1,6 +1,6 @@
 import throwExpression from '../common/throwExpression';
 import { Module } from '../types/Module';
-import { BlobReader, Entry, HttpReader, Uint8ArrayWriter, ZipReader } from '@zip.js/zip.js';
+import { BlobReader, Entry, Uint8ArrayWriter, ZipReader } from '@zip.js/zip.js';
 import serial from '../common/serial';
 
 
@@ -17,6 +17,7 @@ const mkdirWithParents = (instance: Module) => (path: string) => {
     instance.print(`Creating new directory [${path}]`);
     parts.reduce((p, part) => {
       p = [...p, part];
+      if (!part) return p;
       try { instance?.FS.lookupPath(p.join('/')) }
       catch (ignore) { instance?.FS.mkdir(p.join('/')) }
       return p;
