@@ -7,7 +7,7 @@ jobs:
 
   build-fallout2-ce-emscripten-module:
     runs-on: ubuntu-latest
-    container: emscripten/emsdk:4.0.1
+    container: emscripten/emsdk:4.0.2
     steps:
       - name: Checkout fallout2☢️
         uses: actions/checkout@v4

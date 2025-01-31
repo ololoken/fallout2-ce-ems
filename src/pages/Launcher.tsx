@@ -37,7 +37,9 @@ import {directoryInputHandler, zipHttpReader, zipInputReader} from './dataInput'
 import useConfig from '../hooks/useConfig';
 import f2_resIni from '../assets/fallout2ce/f2_res.ini';
 import fetchSaves from './fetchSaves';
-import throwExpression from "../common/throwExpression.ts";
+import throwExpression from '../common/throwExpression';
+
+import { isTMA, initMiniApp } from '@tma.js/sdk';
 
 export default () => {
   const { t, i18n: { resolvedLanguage } } = useTranslation();
@@ -117,7 +119,14 @@ export default () => {
       } finally {
         setInitialized(true);
         instance.FS.writeFile(`${instance?.ENV.HOME}/f2_res.ini`, f2_resIni, { encoding: 'utf8' });
-        instance.FS.chdir(`${instance?.ENV.HOME}`)
+        instance.FS.chdir(`${instance?.ENV.HOME}`);
+
+        isTMA().then(is => {
+          if (is) {
+            const [app] = initMiniApp();
+            app.ready();
+          }
+        });
       }
     })()
   }, [instance])
@@ -242,7 +251,7 @@ export default () => {
       }}
     >
       <CardHeader
-        titleTypographyProps={{ variant: 'subtitle1' }}
+        slotProps={{ title: { variant: 'subtitle1' }}}
         title={''}
         sx={{ p: '8px 12px', height: '44px', '& .MuiCardHeader-action': { width: '100%' } }}
         action={<>
