@@ -120,6 +120,11 @@ export default () => {
         setInitialized(true);
         instance.FS.writeFile(`${instance?.ENV.HOME}/f2_res.ini`, f2_resIni, { encoding: 'utf8' });
         instance.FS.chdir(`${instance?.ENV.HOME}`);
+        instance.onExit = code => {
+          instance.print(`Exit ${code}. You need to reload page to re-init wasm module`);
+          setShowConsole(true);
+          instance?.['_emscripten_exit_pointerlock']?.();
+        }
 
         isTMA().then(is => {
           if (is) {

@@ -33,7 +33,7 @@ export type Module = {
   noInitialRun: boolean
   run: () => void
   callMain: (args?: any[]) => void
-}
+} & Record<string, any>
 
 export type FSNode = {
   node_ops: {}
