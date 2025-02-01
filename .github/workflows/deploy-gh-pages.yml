@@ -41,6 +41,8 @@ jobs:
           name: fallout2-ce-emscripten-module
           path: src/assets/fallout2ce/
       - name: Install and Build 🔧
+        env:
+          SITE_BASE: /fallout2-ce-em
         run: |
           npm install
           npm run build
