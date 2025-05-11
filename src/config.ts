@@ -1,3 +1,3 @@
 export default {
-  i18n: 'en-US',
+  i18n: 'ru-RU',
 };

@@ -4,7 +4,7 @@ import LanguageDetector from 'i18next-browser-languagedetector';
 import en from './locales/en.json';
 import ru from './locales/ru.json';
 
-const fallbackLng = 'en-US';
+const fallbackLng = 'ru-RU';
 
 i18n
   .use(initReactI18next)
@@ -16,7 +16,7 @@ i18n
       escapeValue: false // react already safes from xss
     },
     resources: {
-      'en-US': en,
+      //'en-US': en,
       'ru-RU': ru,
     },
     nsSeparator: ''

@@ -8,68 +8,93 @@ import {
   tooltipClasses,
   Button,
   Stack,
-  CircularProgress,
-  Menu,
-  MenuItem,
-  ListItemText, ListItemIcon
+  CircularProgress, Typography
 } from '@mui/material';
 import BackgroundImage from '../assets/images/background.jpg'
 
 import { useEffect, useRef, useState } from 'react';
 import { useTheme } from '@mui/material/styles';
-import { useTranslation } from 'react-i18next';
+import { useTranslation} from 'react-i18next';
 import { Module } from '../types/Module';
 
-import ActionConfirmation from '../components/ActionConfirmation';
 import DeleteIcon from '../components/icons/DeleteIcon';
-import DemoIcon from '../components/icons/DemoIcon';
-import DownloadIcon from '../components/icons/DownloadIcon';
-import FolderIcon from '../components/icons/FolderIcon';
-import FullScreenIcon from '../components/icons/FullScreenIcon';
-import GlobeIcon from '../components/icons/GlobeIcon';
 import LaunchIcon from '../components/icons/LaunchIcon';
 import TerminalIcon from '../components/icons/TerminalIcon';
-import UploadIcon from '../components/icons/UploadIcon';
-import ZipIcon from '../components/icons/ZipIcon';
 
-import { ModuleInstance } from './module'
-import {directoryInputHandler, zipHttpReader, zipInputReader} from './dataInput';
-import useConfig from '../hooks/useConfig';
-import f2_resIni from '../assets/fallout2ce/f2_res.ini';
-import fetchSaves from './fetchSaves';
+import ActionConfirmation from '../components/ActionConfirmation';
+import { ModuleInstance } from '../assets/module/module';
+import useYSDK from '../hooks/useYSDK';
+import ddrawIni from '../assets/module/ddraw.ini';
+import f2_resIni from '../assets/module/f2_res.ini';
+import fallout2cfg from '../assets/module/fallout2.cfg';
 import throwExpression from '../common/throwExpression';
-
-import { isTMA, initMiniApp } from '@tma.js/sdk';
+import useConfig from '../hooks/useConfig';
+import { CacheService } from '../assets/module/cache.service';
+import preloadBundle from '../assets/module/preload.bundle.json';
+import serial from '../common/serial';
 
 export default () => {
-  const { t, i18n: { resolvedLanguage } } = useTranslation();
-  const config = useConfig();
+  const { t } = useTranslation();
   const theme = useTheme();
-  const [downloadProgress, reportDownloadProgress] = useState(0);
+  const config = useConfig();
+
+  if (config.i18n !== 'ru-RU') config.onChangeLocalization('ru-RU');
+
+  const { sdk } = useYSDK()
+
+  if (sdk.environment.i18n.lang != 'ru')
+    console.warn(`Game supports only russian language`);
 
   const [instance, setInstance] = useState<Module>();
-  const [initialized, setInitialized] = useState(false);
+  const [readyToRun, setReadyToRun] = useState(false);
   const [mainRunning, setMainRunning] = useState(false);
-  const [fullscreen, setFullscreen] = useState(false);
   const [hasData, setHasData] = useState(false);
-  const [uploadAnchorEl, setUploadAnchorEl] = useState<HTMLButtonElement>();
-  const [langAnchorEl, setLangAnchorEl] = useState<HTMLElement>();
 
-  const [showConsole, setShowConsole] = useState(true)
+  const [showConsole, setShowConsole] = useState(import.meta.env.DEV)
   const [messages, setMessages] = useState<Array<string>>([]);
+  const [downloadProgress, setDownloadProgress] = useState(0);
+  const [downloadTimer, setDownloadTimer] = useState(0);
   const pushMessage = (msg: string) => setMessages(messages => {
+    if (msg === 'Running...') return messages;
     messages.reverse().length = Math.min(messages.length, 200);
     return [...messages.reverse(), msg]
   });
 
   const [openDeleteConfirmation, setOpenDeleteConfirmation] = useState(false)
 
-  const [logbox, canvas, directoryInput, zipInput] = [
+  const [logbox, canvas] = [
     useRef<HTMLDivElement>(null),
     useRef<HTMLCanvasElement>(null),
-    useRef<HTMLInputElement>(null),
-    useRef<HTMLInputElement>(null)
   ];
+
+  useEffect(() => {
+    if (!readyToRun || !instance || mainRunning) return;
+    if (import.meta.env.PROD) runInstance();
+  }, [readyToRun, instance, mainRunning]);
+
+  useEffect(() => {
+    if (!instance) return;
+    const handler = () => {
+      if (document.hidden) {
+        instance.SDL2?.audioContext.suspend();
+      } else {
+        instance.SDL2?.audioContext.resume();
+      }
+    }
+    document.addEventListener('visibilitychange', handler);
+    return () => document.removeEventListener('visibilitychange', handler);
+  }, [instance]);
+
+  useEffect(() => {
+    if (!hasData || !instance) return;
+    instance.print(t(`Data bundle looks ok. Continue initialization...`))
+    instance.FS.syncfs(false, err => {
+      if (err) return instance.print(t('error.Failed to sync FS'));
+      instance.FS.chdir(`${instance?.ENV.HOME}`);
+      setReadyToRun(true);
+      return true;
+    })
+  }, [hasData, instance]);
 
   useEffect(() => {
     logbox.current?.scrollIntoView({
@@ -78,102 +103,116 @@ export default () => {
     });
   }, [showConsole, messages]);
 
-  useEffect(() => {//disable canvas context menu
-    if (!canvas.current) return;
-    const handler = (e: MouseEvent) => e.preventDefault();
-    canvas.current.addEventListener('contextmenu', handler)
-    return () => canvas.current?.removeEventListener('contextmenu', handler);
-  }, [canvas]);
-
   useEffect(function critical () {//init wasm module instance
-    if (!canvas.current) return;
+    if (!canvas.current || !sdk) return;
     if ((critical as any)['lock']) return;
     (critical as any)['lock'] = true;
-    pushMessage(`Starting wasm module...`);
+    pushMessage(t(`Starting wasm module...`));
     ModuleInstance({
-      ENV: { HOME: '/fallout2-ce' },
+      ENV: { HOME: '/fallout2-ce-sonora' },
       canvas: canvas.current,
       pushMessage,
-      reportDownloadProgress,
+      reportDownloadProgress: () => {},
+      onExit: (code) => {
+        console.info('!+EXIT+!', code);
+        if (import.meta.env.PROD) {
+          sdk.dispatchEvent('EXIT')
+            .then(console.log).catch(console.error)
+            .finally(() => location.reload());
+        }
+      }
     }).then(setInstance)
-      .catch((e) => pushMessage(`WASM module start failed ${e}`))
-  }, [canvas])
+      .catch((e: Error) => {
+        pushMessage(t(`error.WASM module start failed`));
+        console.error(e);
+      })
+  }, [canvas, sdk])
 
   useEffect(() => {
     if (!instance) return;
+    Object.assign(window,  { instance });//debug purposes
+    let totalDataSize = 0;
+    let totalDataDownloaded = 0;
+    instance.print(t(`Looking up data in [{{path}}]`, { path: instance.ENV.HOME }));
+    const intervalHandle = setInterval(() => {
+      instance?.print(`Загружено ${totalDataDownloaded}/${totalDataSize}`);
+      setDownloadProgress(totalDataDownloaded/totalDataSize*100);
+    }, 1000);
+    const start = performance.now();
+    const timerIntervalHandle = setInterval(() => {
+      setDownloadTimer((performance.now()-start)/1000)
+    }, 1)
+    const datFiles = instance.REMOTE_DATA_BUNDLE.filter(file => file.name.endsWith('master.dat'));
+    const restFiles = instance.REMOTE_DATA_BUNDLE.filter(file => !file.name.endsWith('master.dat'));
+    Promise.all(restFiles.filter(file => {
+      const info = instance.FS.analyzePath(`${instance.ENV.HOME}/${file.name}`);
+      return !info.exists || info.object.contents.length !== file.size
+    }).map(missingFile => {
+      if (!instance) return false;
+      totalDataSize += missingFile.size;
+      instance.print(`Нужно докачать: ${missingFile.name}`);
+      const path = `${instance?.ENV.HOME}/${missingFile.name}`;
+      //return Promise.resolve(true);
+      instance?.FS.mkdirTree(instance.PATH.dirname(path) ?? throwExpression('failed_to_create_dir'));
+      return fetch(`${instance.REMOTE_DATA_BASE_URL}/${missingFile.name}`)
+        .then(async resp => {
+          const reader = resp.body?.getReader() ?? throwExpression(`failed to fetch ${(missingFile.name)}`);
+          const chunks = []
+          while(true) {
+            const { done, value } = await reader.read();
+            if (done) break;
 
-    instance.print(`Looking up data in [${instance.ENV.HOME}]`);
-    (async () => {
-      try {
-        instance.print(`Mounting [${instance.ENV.HOME}]...`)
-
-        instance.FS.mkdir(`${instance.ENV.HOME}`);
-        instance.FS.mount(instance.FS.filesystems.IDBFS, {root: '/'}, `${instance.ENV.HOME}`);
-        await new Promise<boolean>((resolve, reject) => instance.FS.syncfs(true, err => {
-          if (err) return reject(err);
-          instance.print(`Mounted [${instance.ENV.HOME}]`);
-          resolve(Object.keys(instance.FS.lookupPath(`${instance.ENV.HOME}`).node.contents).length > 1);
-        })).then(setHasData)
-      } catch (ignore) {
-        instance.print('No local data found...')
-      } finally {
-        setInitialized(true);
-        instance.FS.writeFile(`${instance?.ENV.HOME}/f2_res.ini`, f2_resIni, { encoding: 'utf8' });
-        instance.FS.chdir(`${instance?.ENV.HOME}`);
-        instance.onExit = code => {
-          instance.print(`Exit ${code}. You need to reload page to re-init wasm module`);
-          setShowConsole(true);
-          instance?.['_emscripten_exit_pointerlock']?.();
+            chunks.push(value);
+            totalDataDownloaded += value.length;
+          }
+          instance?.FS.writeFile(path, new Uint8Array(await new Blob(chunks).arrayBuffer()));
+          instance?.print(`Файл [${missingFile.name}] полностью скачан.`);
+          return true;
+        })
+        .catch((e) => {
+          console.log(e);
+          return false;
+        });
+    }))
+      .then(arr => arr.reduce((res, b) => res = res === false ? res : b, true))
+      .then(async res => {
+        if (!res) {
+          instance.print(`Что-то не прогрузилось, попробуйте обновить страницу.`);
+          return;
         }
 
-        isTMA().then(is => {
-          if (is) {
-            const [app] = initMiniApp();
-            app.ready();
-          }
-        });
-      }
-    })()
+        clearInterval(intervalHandle);
+        clearInterval(timerIntervalHandle);
+        setDownloadProgress(0);
+        setDownloadTimer(0);
+
+        instance.FS.writeFile(`${instance?.ENV.HOME}/f2_res.ini`, f2_resIni, { encoding: 'utf8' });
+        //instance.FS.writeFile(`${instance?.ENV.HOME}/fallout2.cfg`, fallout2cfg, { encoding: 'utf8' });
+        instance.FS.writeFile(`${instance?.ENV.HOME}/ddraw.ini`, ddrawIni, { encoding: 'utf8' });
+        await serial(datFiles.map(datFile => () => CacheService.init(instance, instance.REMOTE_DATA_BASE_URL, { path: datFile.name, size: datFile.size })
+          .then(service => {
+            const [,list] = Object.entries(preloadBundle).find(([fn]) => datFile.name.endsWith(fn)) ?? [,[]];
+            service.setBigFileLoader(setDownloadProgress)
+            return service.start(Object.keys(list))
+              .finally(() => {
+                //dirty hack as I dont' want to implement safe chunk by chunk fetch of big files
+                const lsKey = `loaded$${datFile.name}`;
+                if (localStorage.getItem(lsKey) === 'yes') return;
+                fetch(`${instance.REMOTE_DATA_BASE_URL}/${datFile.name}`)
+                  .then(resp => resp.arrayBuffer())
+                  .then(arrayBuffer => instance?.FS.writeFile(`${instance.ENV.HOME}/${datFile.name}`, new Uint8Array(arrayBuffer)))
+                  .then(() => service.syncCache())
+                  .then(() => localStorage.setItem(lsKey, 'yes'))
+                  .catch((ignore) => console.log(`fetch of ${datFile.name} faile, lets try next time`))
+              });
+          })));
+        console.log(`loaded in ${(performance.now()-start)/1000}s`)
+        setHasData(res);
+      })
+      .finally(() => {
+
+      });
   }, [instance])
-
-  useEffect(() => {//handle folder input
-    const { current } = directoryInput;
-    if (!current || !instance) return;
-
-    const handler = ({ target }: Event) => {
-      const input = target as HTMLInputElement;
-      if (!input.files) return instance.print('No files selected');
-      directoryInputHandler(instance, [...input.files]).then(setHasData);
-      input.value = '';
-    }
-    current.addEventListener('input', handler);
-
-    return () => current.removeEventListener('input', handler);
-  }, [directoryInput, instance]);
-
-  useEffect(() => {//handle zip input
-    const { current } = zipInput;
-    if (!current || !instance) return;
-
-    const handler = ({ target }: Event) => {
-      const input = target as HTMLInputElement;
-      const file = input.files?.[0] ?? throwExpression('no file provided');
-      input.value = '';
-      zipInputReader(instance, file).then(setHasData);
-    }
-    current.addEventListener('input', handler);
-
-    return () => current.removeEventListener('input', handler);
-  }, [zipInput, instance]);
-
-  useEffect(() => {
-    if (!hasData || !instance) return;
-    instance.print(`Data bundle looks ok. Continue initialization...`)
-    instance.FS.syncfs(false, err => {
-      if (err) return instance.print('Failed to sync FS');
-      return true;
-    })
-  }, [hasData, instance]);
 
   const clearPath = (basePath: string) => {
     if (!instance) return;
@@ -184,10 +223,10 @@ export default () => {
             ? clearPath(`${basePath}/${path}`)
             : instance.FS.unlink(`${basePath}/${path}`)
       })
-      try { instance.FS.rmdir(`${basePath}`) } catch (ignore) {}
-    } catch (e) {
-      console.error(e);
-      instance.print(`Failed to remove stored data ${e}`)
+      instance.FS.rmdir(`${basePath}`)
+    } catch (err) {
+      instance.print(`Failed to remove stored data`)
+      console.error(err)
     }
   };
 
@@ -196,53 +235,16 @@ export default () => {
   }
 
   const runInstance = () => {
-    if (!instance) return;
-    instance.callMain();
+    if (!instance || mainRunning) return;
+    try {
+      instance.callMain();
+    }
+    catch (e) {
+      console.log(e);
+    }
     setMainRunning(true);
     setShowConsole(false);
-  }
-
-  const importSonora = async () => {
-    if (!instance) return;
-    instance.print(`Отличный выбор.... Начинаю установку.`);
-    const url = 'https://turch.in/Fallout_Sonora_1_14.zip';
-    zipHttpReader(instance, url).then(setHasData);
-  }
-
-  const importSonoraEn = async () => {
-    if (!instance) return;
-    instance.print(`Good luck you ranger....`);
-    const url = 'https://turch.in/Fallout_Sonora_1_14_en.zip';
-    zipHttpReader(instance, url).then(setHasData);
-  }
-
-
-  const importNevada = () => {
-    if (!instance) return;
-    const url = 'https://turch.in/Fallout_Nevada.zip';
-    instance.print(`Отличный выбор.... Начинаю установку.`);
-    zipHttpReader(instance, url, 20).then(setHasData);
-  }
-
-  useEffect(function critical () {
-    const handler = (e: Event) => {
-      setFullscreen(!!document.fullscreenElement);
-    }
-    document.addEventListener('fullscreenchange', handler);
-
-    return () => document.removeEventListener('fullscreenchange', handler);
-  }, [])
-
-  useEffect(() => {
-    instance?.print(fullscreen
-      ? 'Entered fullscreen mode'
-      : 'Exited fullscreen mode')
-  }, [fullscreen])
-
-  const doFullScreen = () => {
-    instance?.print('Entering fullscreen mode')
-    canvas.current?.requestFullscreen()
-      .catch(() => instance?.print('Fullscreen request failed'));
+    sdk.features.LoadingAPI.ready();
   }
 
   return (
@@ -250,108 +252,43 @@ export default () => {
       elevation={0}
       sx={{
         position: 'relative',
-        border: '1px solid',
+        border: import.meta.env.PROD ? 'none' : '1px solid',
         borderRadius: 1,
         borderColor: theme.palette.divider,
       }}
     >
       <CardHeader
-        slotProps={{ title: { variant: 'subtitle1' }}}
+        slotProps={{
+          title: { variant: 'subtitle1' }
+        }}
         title={''}
-        sx={{ p: '8px 12px', height: '44px', '& .MuiCardHeader-action': { width: '100%' } }}
+        sx={{ p: '8px 12px', height: '44px', '& .MuiCardHeader-action': { width: '100%' }, ...(import.meta.env.PROD ? {display: 'none'} : {}) }}
         action={<>
           <Stack direction={"row"} spacing={2}>
-            <Tooltip title='Language' slotProps={{ popper: { sx: {
-                  [`&.${tooltipClasses.popper}[data-popper-placement*="bottom"] .${tooltipClasses.tooltip}`]: { marginTop: '0px', color: '#000', fontSize: '1em' }
-                } }}}>
-              <ToggleButton value={-1} selected={Boolean(langAnchorEl)} sx={{ p: '3px 6px', height: '36px' }} onClick={e => setLangAnchorEl(e.currentTarget)}>
-                <GlobeIcon width="2.4em" height="2.4em" />
-              </ToggleButton>
-            </Tooltip>
-            <Menu open={Boolean(langAnchorEl)} anchorEl={langAnchorEl} onClose={() => setLangAnchorEl(undefined)}>
-              <MenuItem onClick={() => { config.onChangeLocalization('ru-RU'); setLangAnchorEl(undefined) }} disabled={!zipInput.current} sx={{fontSize: '10px', textDecoration: resolvedLanguage === 'ru-RU' ? 'underline' : '' }}>RU</MenuItem>
-              <MenuItem onClick={() => { config.onChangeLocalization('en-US'); setLangAnchorEl(undefined) }} disabled={!directoryInput.current} sx={{fontSize: '10px', textDecoration: resolvedLanguage === 'en-US' ? 'underline' : ''}}>EN</MenuItem>
-            </Menu>
             <Box flex={1} />
-            {!initialized && <CircularProgress color="warning" size="34px" />}
-            {initialized && !hasData && <Button
-              sx={{ fontSize: '1em', height: '36px' }}
-              variant="contained"
-              onClick={e => setUploadAnchorEl(e.currentTarget)}
-            >
-              <UploadIcon width="2.4em" height="2.4em" style={{ margin: '0 1em 0 0' }} />{t('menu.Add game data')}
-            </Button>}
-            <Menu open={Boolean(uploadAnchorEl)} anchorEl={uploadAnchorEl} onClose={() => setUploadAnchorEl(undefined)}>
-              <MenuItem onClick={() => { zipInput.current?.click(); setUploadAnchorEl(undefined) }} disabled={!zipInput.current} sx={{fontSize: '10px'}}>
-                <ListItemIcon><ZipIcon width="2.4em" height="2.4em" style={{ margin: '0 1em 0 0' }} /></ListItemIcon>
-                <ListItemText>{t('menu.Select zip archive')}</ListItemText>
-              </MenuItem>
-              <MenuItem onClick={() => { directoryInput.current?.click(); setUploadAnchorEl(undefined) }} disabled={!directoryInput.current} sx={{fontSize: '10px'}}>
-                <ListItemIcon><FolderIcon width="2.4em" height="2.4em" style={{ margin: '0 1em 0 0' }} /></ListItemIcon>
-                <ListItemText>{t('menu.Select data folder')}</ListItemText>
-              </MenuItem>
-              {resolvedLanguage === 'ru-RU' && <MenuItem onClick={() => { importSonora(); setUploadAnchorEl(undefined) }} sx={{fontSize: '10px'}}>
-                <ListItemIcon><DemoIcon width="2.4em" height="2.4em" style={{ margin: '0 1em 0 0' }} /></ListItemIcon>
-                <ListItemText>Fallout 2: Сонора</ListItemText>
-              </MenuItem>}
-              {resolvedLanguage === 'ru-RU' && <MenuItem onClick={() => { importNevada(); setUploadAnchorEl(undefined) }} sx={{fontSize: '10px'}}>
-                  <ListItemIcon><DemoIcon width="2.4em" height="2.4em" style={{ margin: '0 1em 0 0' }} /></ListItemIcon>
-                  <ListItemText>Fallout 2: Невада</ListItemText>
-              </MenuItem>}
-              {resolvedLanguage === 'en-US' && <MenuItem onClick={() => { importSonoraEn(); setUploadAnchorEl(undefined) }} sx={{fontSize: '10px'}}>
-                  <ListItemIcon><DemoIcon width="2.4em" height="2.4em" style={{ margin: '0 1em 0 0' }} /></ListItemIcon>
-                  <ListItemText>Fallout 2: Sonora</ListItemText>
-              </MenuItem>}
-            </Menu>
-            {initialized && hasData && !mainRunning && <Button
+            {!readyToRun && <CircularProgress color="warning" size="34px" />}
+            {readyToRun && hasData && !mainRunning && <Button
                 sx={{ fontSize: '1em', height: '36px' }}
                 variant="contained"
                 onClick={() => runInstance()}
             ><LaunchIcon width="2.4em" height="2.4em" style={{ margin: '0 1em 0 0' }} /> {t('menu.Run')}</Button>}
-            {initialized && hasData && !mainRunning && <Button
-                sx={{ fontSize: '1em', height: '36px' }}
-                variant="contained"
-                onClick={() => {
-                  setInitialized(true)
-                  fetchSaves(instance).finally(() => setInitialized(false));
-                }}
-            ><DownloadIcon width="2.4em" height="2.4em" style={{ margin: '0 1em 0 0' }} /> {t('menu.Fetch saves')}</Button>}
-            {initialized && hasData && !mainRunning && <Button
+            {readyToRun && hasData && !mainRunning && <Button
               sx={{ fontSize: '1em', height: '36px' }}
               variant="contained"
               onClick={() => removeData()}
             ><DeleteIcon width="2.4em" height="2.4em" style={{ margin: '0 1em 0 0' }} /> {t('menu.Remove data')}</Button>}
-            {mainRunning && <Tooltip title={t('menu.Toggle Fullscreen')} slotProps={{ popper: { sx: {
-                  [`&.${tooltipClasses.popper}[data-popper-placement*="bottom"] .${tooltipClasses.tooltip}`]: { marginTop: '0px', color: '#000', fontSize: '1em' }
-                } }}}>
-                <ToggleButton value={-1} selected={fullscreen} sx={{ p: '3px 6px', height: '36px' }} onClick={() => doFullScreen()}>
-                    <FullScreenIcon width="2.4em" height="2.4em" />
-                </ToggleButton>
-            </Tooltip>}
             <Tooltip title={t('menu.Toggle Console')} slotProps={{ popper: { sx: {
                 [`&.${tooltipClasses.popper}[data-popper-placement*="bottom"] .${tooltipClasses.tooltip}`]: { marginTop: '0px', color: '#000', fontSize: '1em' }
               } }}}>
-                <ToggleButton value={-1} selected={showConsole} sx={{ p: '3px 6px', height: '36px' }} onClick={() => setShowConsole(!showConsole)}>
+                <ToggleButton value={-1} selected={showConsole} sx={{ p: '3px 6px', height: '36px' }} onClick={() => {
+                  //open(URL.createObjectURL(new Blob([instance?.FS.readFile("/fallout2-ce-sonora/critter.dat", { encoding: 'binary' })!], {type: 'octet/stream'})));
+                  setShowConsole(!showConsole)
+                }}>
                   <TerminalIcon width="2.4em" height="2.4em" />
               </ToggleButton>
             </Tooltip>
           </Stack>
         </>}
-      />
-      <input
-        ref={directoryInput}
-        style={{ display: 'none' }}
-        type="file"
-        multiple
-        //@ts-ignore
-        webkitdirectory={'directory'}
-        directory={'directory'}
-      />
-      <input
-        ref={zipInput}
-        type="file"
-        accept="application/zip"
-        style={{ display: 'none' }}
       />
       <CardContent sx={{
         p: 0,
@@ -379,23 +316,54 @@ export default () => {
         <canvas id="canvas" ref={canvas} width={640} height={480} style={{
           width: '100%', height: '100%', position: 'absolute', zIndex: 100,
           top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-          maxWidth: 'calc(100vh* 640 / 480)'
+          maxWidth: 'calc(100vh * 640 / 480)'
         }}></canvas>
       </CardContent>
+      {downloadProgress ? <Box sx={{ position: 'absolute', display: 'inline-flex', zIndex: 120, top: 'calc(100vh / 2 - 100px)', left: 'calc(100vw / 2 - 100px)' }}>
+        <CircularProgress variant="indeterminate" value={downloadProgress} size={200} />
+        <Box
+          sx={{
+            top: 0,
+            left: 0,
+            bottom: 0,
+            right: 0,
+            position: 'absolute',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Typography
+            variant="caption"
+            fontSize={40}
+            fontWeight={'bold'}
+            component="div"
+            sx={{ color: 'text.primary' }}
+          >{`${Math.round(downloadProgress)}%`}</Typography>
+          {downloadTimer ? <Typography
+              variant="subtitle1"
+              component="div"
+              sx={{ color: 'text.primary' }}
+          >{`${downloadTimer.toFixed(2)} c`}</Typography> : <Typography
+            variant="subtitle1"
+            component="div"
+            sx={{ color: 'text.primary' }}
+          >Кеширование</Typography>}
+        </Box>
+      </Box> : ''}
       <ActionConfirmation
         open={openDeleteConfirmation}
         title={t('confirm.Are you sure?')}
         handleClose={(status) => {
           setOpenDeleteConfirmation(false);
           if (!status || !instance) return;
-          setInitialized(false);
-          setShowConsole(true)
-          clearPath(String(instance.ENV.HOME));
-          instance.FS.writeFile(`${instance?.ENV.HOME}/f2_res.ini`, f2_resIni, {encoding: 'utf8'})
+
+          clearPath(`${instance.ENV.HOME}`);
           instance.FS.syncfs(false, err => {
             if (err) return instance.print(`Failed to remove data at [${instance.ENV.HOME}]`);
             setHasData(false)
-            setInitialized(true);
+            setShowConsole(true)
           });
 
         }}

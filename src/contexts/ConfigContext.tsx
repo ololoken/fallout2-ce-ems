@@ -17,7 +17,7 @@ type ConfigProviderProps = {
 };
 
 function ConfigProvider({ children }: ConfigProviderProps) {
-  const [config, setConfig] = useLocalStorage('f2-ce$config', initialState);
+  const [config, setConfig] = useLocalStorage(`$config`, initialState);
   const { i18n } = useTranslation();
 
   const onChangeLocalization = (lang: I18n) => i18n.changeLanguage(lang)

@@ -1,3 +1,4 @@
+import { YaGamesProvider } from './contexts/YaGamesContext';
 import './i18n'
 import Routes from './routes';
 import ThemeCustomization from './theme';
@@ -32,7 +33,9 @@ export default () => {
 
   return (
     <ThemeCustomization>
-      <Routes />
+      <YaGamesProvider>
+        <Routes />
+      </YaGamesProvider>
     </ThemeCustomization>
   );
 }
